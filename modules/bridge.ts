@@ -10,6 +10,11 @@ import { JsonRpcProvider } from "ethers" // New: импортирование Js
 
 const destChain: number = 184 // base
 
+// Функция sleep для создания задержки
+function sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 export class Bridge {
     privateKey: Hex
     bridgeContractAddress:Hex = '0x49048044D57e1C92A77f79988d21Fa8fAF74E97e'
@@ -169,9 +174,9 @@ export class Bridge {
         const ethWallet = getEthWalletClient(this.privateKey);
         const value: bigint = BigInt(parseEther(amount));
 
-        let gasLimit = BigInt(120000); // Выносим gasLimit в переменную
+        let gasLimit = BigInt(100000); // Выносим gasLimit в переменную
         let attempts = 0;
-        const maxAttempts = 2; // Устанавливаем повторное количество попыток, для транзакций со статусом Fail
+        const maxAttempts = 3; // Устанавливаем повторное количество попыток, для транзакций со статусом Fail
 
         while (attempts < maxAttempts) {
             try {
@@ -185,6 +190,11 @@ export class Bridge {
 
                 this.logger.info(`${ethWallet.account.address} | Official bridge ETH -> Base done: https://etherscan.io/tx/${txHash}`);
 
+                // Задержка 20-30 секунд перед проверкой транзакции
+                const delayTime = (Math.random() * (30 - 20) + 20) * 1000;
+                this.logger.info(`Waiting for ${delayTime / 1000} seconds before checking the transaction status.`);
+                await sleep(delayTime);
+
                 const success = await this.checkTransactionStatus(txHash); // Вызов метода checkTransactionStatus
                 if (success) {
                     this.logger.info('Transaction successful, exiting loop.');  // Логирование успеха и выход из цикла
@@ -197,8 +207,13 @@ export class Bridge {
                 this.logger.error(`${ethWallet.account.address} | Official bridge ETH -> Base error: ${e.shortMessage}`);
             }
 
-            gasLimit += BigInt(20000);  // Увеличиваем gasLimit для следующей попытки
+            gasLimit += BigInt(5000);  // Увеличиваем gasLimit для следующей попытки
             attempts++;
+
+            // Задержка 60-90 секунд перед повторной попыткой
+            const retryDelayTime = (Math.random() * (90 - 60) + 60) * 1000;
+            this.logger.info(`Waiting for ${retryDelayTime / 1000} seconds before the next attempt.`);  // Логирование времени ожидания
+            await sleep(retryDelayTime);
         }
 
         if (attempts === maxAttempts) {
