@@ -15,6 +15,12 @@ import { Aave } from "./modules/aave"
 import { Odos } from "./modules/odos"
 import { waitGas } from "./utils/getCurrentGas"
 import { Binance } from "./modules/binance"
+import { on } from "events"
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+    console.error('Uncaught Exception:', error)
+})
 
 let privateKeys = readWallets('./private_keys.txt')
 

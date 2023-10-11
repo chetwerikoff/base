@@ -6,6 +6,7 @@ import { stargateAbi } from '../data/abi/stargate'
 import { bridgeAbi } from "../data/abi/bridge"
 import { getOpWalletClient, getPublicOpClient } from "../utils/optimismClient"
 import { makeLogger } from "../utils/logger"
+import { JsonRpcProvider } from "ethers" // New: импортирование JsonRpcProvider
 
 const destChain: number = 184 // base
 
@@ -152,32 +153,56 @@ export class Bridge {
         }
     }
 
-    async bridge(amount: string) {
-        const ethWallet = getEthWalletClient(this.privateKey)
-        const value: bigint = BigInt(parseEther(amount))
+    async checkTransactionStatus(txHash: string) { // Добавляем проверку статуса транзакции
+        const ethClient = getPublicEthClient()
+        const provider = new JsonRpcProvider("https://rpc.ankr.com/eth") // Создание экземпляра JsonRpcProvider
+        const receipt = await provider.getTransactionReceipt(txHash) // Использование provider для получения квитанции о транзакции
+            if (receipt === null) {
+                throw new Error('Transaction receipt not found')
+            }
+        const success = receipt.status === 1  // Проверка статуса транзакции (1 для успешной, 0 для неудачной)
+        this.logger.info(`Transaction ${txHash} success status: ${success}`)  // Логирование статуса успеха
+        return success
+    }
 
-        this.logger.info(`${ethWallet.account.address} | Official bridge ETH -> Base ${amount} ETH`)
-    
-        const args: readonly [
-            `0x${string}`,
-            bigint,
-            bigint,
-            boolean,
-            `0x${string}`
-        ] = [ethWallet.account.address, value, BigInt(100000), false, '0x']
-        
-        try {
-            const txHash = await ethWallet.writeContract({
-                address: this.bridgeContractAddress,
-                abi: bridgeAbi,
-                functionName: 'depositTransaction',
-                args: args,
-                value: value
-            })
-        
-            this.logger.info(`${ethWallet.account.address} | Official bridge ETH -> Base done: https://etherscan.io/tx/${txHash}`)
-        } catch (e) {
-            this.logger.error(`${ethWallet.account.address} | Official bridge ETH -> Base error: ${e.shortMessage}`)
+    async bridge(amount: string) {
+        const ethWallet = getEthWalletClient(this.privateKey);
+        const value: bigint = BigInt(parseEther(amount));
+
+        let gasLimit = BigInt(120000); // Выносим gasLimit в переменную
+        let attempts = 0;
+        const maxAttempts = 2; // Устанавливаем повторное количество попыток, для транзакций со статусом Fail
+
+        while (attempts < maxAttempts) {
+            try {
+                const txHash = await ethWallet.writeContract({
+                    address: this.bridgeContractAddress,
+                    abi: bridgeAbi,
+                    functionName: 'depositTransaction',
+                    args: [ethWallet.account.address, value, gasLimit, false, '0x'],
+                    value: value
+                });
+
+                this.logger.info(`${ethWallet.account.address} | Official bridge ETH -> Base done: https://etherscan.io/tx/${txHash}`);
+
+                const success = await this.checkTransactionStatus(txHash); // Вызов метода checkTransactionStatus
+                if (success) {
+                    this.logger.info('Transaction successful, exiting loop.');  // Логирование успеха и выход из цикла
+                    break;
+                } else {
+                    this.logger.error(`${ethWallet.account.address} | Transaction failed, retrying with higher gas limit`);
+                }
+
+            } catch (e) {
+                this.logger.error(`${ethWallet.account.address} | Official bridge ETH -> Base error: ${e.shortMessage}`);
+            }
+
+            gasLimit += BigInt(20000);  // Увеличиваем gasLimit для следующей попытки
+            attempts++;
+        }
+
+        if (attempts === maxAttempts) {
+            this.logger.error(`${ethWallet.account.address} | Official bridge ETH -> Base error: Maximum retry attempts reached`);
         }
     }
 }

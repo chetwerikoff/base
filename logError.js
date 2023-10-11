@@ -1,2 +1,2 @@
-import { setUncaughtExceptionCaptureCallback } from "node:process"
-setUncaughtExceptionCaptureCallback(console.log)
+// import { setUncaughtExceptionCaptureCallback } from "node:process"
+// setUncaughtExceptionCaptureCallback(console.log)
